@@ -20,9 +20,17 @@ import gzip
 
 __version__ = "0.1"
 
-parser = argparse.ArgumentParser(description='')
+parser = argparse.ArgumentParser(description='	Calculates the median coverage both per sample \
+												and per base pair, from a file containing the \
+												sequencing coverage for each base in a reference \
+												genome. The coverage file is gzipped and can be \
+												the output from e.g. samtools depth. WARNING: \
+												script may use a lot of memory, depending on \
+												genome size and number of samples.')
 parser.add_argument("input", \
-                    help="Input gzipped tab delimited file of coverage.", \
+                    help="Input gzipped tab delimited file of depth of coverage.\n \
+                    	  Format is: 'scaffold\tcoordinate\tdepth_sample_1\t...\tdepth_sample_n' .\n \
+                    	  The first line is a header in the format: '# CHROM\tPOS\tname_sample_1\t...\tname_sample_n'", \
                     type = str)
 parser.add_argument("-o","--output", \
                     help="Output prefix.", \
@@ -34,51 +42,38 @@ parser.add_argument("-v","--version", \
                     version = "median_coverage v.{}".format(__version__))
 args = parser.parse_args()
 
-
-def write_out(outlines):
-	''' Write the output.
-	'''
-	with open(args.output+".txt", "w") as out:
-		out.write("\n".join(outlines))
-		out.write("\n")
-
 def main():
-	outlines = [] # Save each output line as a string in a list
 	with gzip.open(args.input, "rt") as infile:
-		for line in infile:
-			line = line.strip()
-			fields = line.split("\t")
+		with open(args.output+".txt", "w") as outfile:
+			for line in infile:
+				line = line.strip()
+				fields = line.split("\t")
 
-			# First line is the header. Here we define the samples
-			# Order is important, since the columns are in the same order
-			if line.startswith("#"):
-				# Keep the samples in a list, so we know the order
-				samples = [ f for f in fields[2:] ]
-				# Also define a dict, which is unordered, but we will use the list to fill it.
-				cov_per_sample = { f:[] for f in fields[2:] }
+				# First line is the header. Here we define the samples
+				# Order is important, since the columns are in the same order
+				if line.startswith("#"):
+					# Keep the samples in a list, so we know the order
+					samples = [ f for f in fields[2:] ]
+					# Also define a dict, which is unordered, but we will use the list to fill it.
+					cov_per_sample = { f:[] for f in fields[2:] }
 
-			else:
-				# For each data line we want to do two things
-				# 1. Calculate the median for the line = genomic position
-				# 2. Save each value to its respective dict entry
-				#import ipdb; ipdb.set_trace()
-				# 1.
-				dat = np.asarray(fields[2:], dtype = int)
-				median = np.median(dat)
-				sd = np.std(dat)
-				outlines.append("\t".join([fields[0], fields[1], str(median), str(sd)]))
-				# 2.
-				for idx, val in enumerate(fields[2:]):
-					cov_per_sample[samples[idx]].append(int(val))
+				else:
+					# For each data line we want to do two things
+					# 1. Calculate the median for the line = genomic position
+					dat = np.asarray(fields[2:], dtype = int)
+					median = np.median(dat)
+					sd = np.std(dat)
+					outfile.write("{}\t{}\t{}\t{}\n".format(fields[0], fields[1], str(median), str(sd)))
+					# 2. Save each value to its respective dict entry. Use enumerate to get the index for the sample
+					for idx, val in enumerate(fields[2:]):
+						cov_per_sample[samples[idx]].append(int(val))
 
-		# After done looping through the file, convert lists in the dict to arrays and calculate median, sd
-		print("# Median coverage per sample")
-		for k,v in cov_per_sample.items():
-			dat = np.asarray(v)
-			median, sd = np.median(dat), np.std(dat)
-			print("\t".join([k, str(median), str(sd)]))
-		# And write the output file.
-		write_out(outlines)
+	# After done looping through the file, convert lists in the dict to arrays and calculate median, sd
+	print("# Median coverage per sample")
+	for k,v in cov_per_sample.items():
+		dat = np.asarray(v)
+		median, sd = np.median(dat), np.std(dat)
+		print("\t".join([k, str(median), str(sd)]))
 
 if __name__ == "__main__":
     main()
