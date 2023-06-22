@@ -22,16 +22,18 @@ from operator import truediv # To be able to divide lists
 from scipy import stats as ss
 import argparse
 
-__version__ = "0.4"
+__version__ = "0.41"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
-                                            GATK VariantsToTable. The first 5 \
-                                            columns contain data about the variant, \
+                                            GATK VariantsToTable. Should be of the \
+                                            following format: \
+                                            "gatk VariantsToTable -V $VCF -F CHROM -F POS -F ID -F REF -F ALT -F QUAL -GF AD -O $OUTPUT" \
                                             data for each sample start at the 6th. \
-                                            Each element in the table is comma separated \
-                                            and contains number of reads with reference \
-                                            allele and number of reads with alternate allele.')
+                                            The AD field in the table should be comma separated \
+                                            and contain the number of reads with reference \
+                                            allele and number of reads with alternate allele, \
+                                            e.g. "23,21".')
 parser.add_argument("input", \
                     help="Input table.", \
                     type = str)
