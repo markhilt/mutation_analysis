@@ -22,7 +22,7 @@ from operator import truediv # To be able to divide lists
 from scipy import stats as ss
 import argparse
 
-__version__ = "0.41"
+__version__ = "0.42"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -112,9 +112,11 @@ def readCov():
     with open(args.coverage_file, "r", encoding="utf-8") as cov:
         for line in cov:
             line = line.strip()
+            if line.startswith("#"):
+                continue
             sample = line.split("\t")[0]
-            coverage = int(line.split("\t")[1])
-            median_covs[sample] = coverage
+            coverage = float(line.split("\t")[1])
+            median_covs[sample] = int(coverage)
     return median_covs
 
 def test_signif(var,cov):
