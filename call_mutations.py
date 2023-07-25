@@ -4,7 +4,7 @@
 """
 call_mutations.py
 Author: Markus Hiltunen
-E-mail: markus.hiltunen@ebc.uu.se
+E-mail: markus.hiltunen@su.se
 
 This script is used to filter out background variants and retain potentially
 new mutations in samples originating from different tissues of the same individual.
@@ -14,7 +14,7 @@ in a subset of tissues. Variants that conform to this principle can be optionall
 further filtered, as there might be many false positives left, depending on
 how the user filtered the inital vcf file.
 
-Copyright (c) 2022, Johannesson lab
+Copyright (c) 2023, Johannesson lab
 Licensed under the MIT license. See LICENSE file.
 """
 
@@ -22,7 +22,7 @@ from operator import truediv # To be able to divide lists
 from scipy import stats as ss
 import argparse
 
-__version__ = "0.42"
+__version__ = "0.5"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -60,14 +60,21 @@ parser.add_argument("-a","--coverage_factor", \
                     type = float, \
                     default = 0.2)
 parser.add_argument("-r","--minimum_reads", \
-                    help="Minimum number of reads to keep a variant. At least \
-                    one sample needs to have this many reads to keep the variant [2].", \
+                    help="Minimum number of reads supporting a variant to keep it. At least \
+                    one sample needs to have at least this many reads supporting the variant [2].", \
                     type = int, \
                     default = 2)
 parser.add_argument("-f","--frequency_cutoff", \
                     help="Minimum variant read frequency to keep a variant [0.2].", \
                     type = float, \
                     default = 0.2)
+parser.add_argument("-p","--frequency_product", \
+                    help="Minimum variant read frequency product. Calculated as \
+                    the product of the variant read frequencies for all samples with \
+                    at least one read supporting the variant. If a site has many samples \
+                    with very few reads supporting the variant, this value will be very small [1E-10].", \
+                    type = float, \
+                    default = 1E-10)
 parser.add_argument("-s","--skip_indels", \
                     help="Add to skip indels (useful for pileup data).", \
                     action='store_true')
@@ -137,6 +144,11 @@ def main():
     outfile = getOut() + ".table"
     outlines = []
 
+    # If user gives a file with median coverage values (-c),
+    # read this file.
+    if args.coverage_file:
+        median_covs = readCov()
+
     with open(args.input, "r", encoding="utf-8") as input:
         for line in input:
             line = line.strip()
@@ -180,7 +192,7 @@ def main():
             if all(x == variant_frequencies[0] for x in variant_frequencies):
                 continue
 
-            # Look for homozygous sites. Require also more than 1 read
+            # Look for homozygous sites. Require also more than args.minimum_reads
             # of the minor allele in at least one sample
             if (1.0 in variant_frequencies or 0.0 in variant_frequencies) and \
             max([x.ref_reads for x in genotypes]) >= args.minimum_reads and \
@@ -193,23 +205,28 @@ def main():
                     continue
 
                 # Otherwise, continue filtering
-                homoz_checker, heteroz_checker = False, False
+                homoz_cov_checker, heteroz_cov_checker = False, False
                 indv_cov_checker, freq_checker = True, False
                 tot_ref, tot_alt, totcov = 0,0,0
+                freq_prod = 1
 
                 for gt in genotypes:
 
-                    # Check total ref/alt frequency at this site,
-                    # for heterozygous samples with more than 1 read
-                    # containing variant allele
-                    if gt.var_freq != 1.0 and gt.var_freq != 0.0 \
-                    and gt.var_reads > 1:
-                        totcov = totcov + gt.cov
+                    # Look for heterozygous sites
+                    if gt.var_freq != 1.0 and gt.var_freq != 0.0:
 
                         # Add number of variant reads to total variant
                         # allele counter
+                        totcov += gt.cov
                         tot_alt += gt.var_reads
                         tot_ref += gt.ref_reads
+
+                        # Keep a product of the frequency of the
+                        # variant allele. This value will be very
+                        # low if there is a bias for many samples to
+                        # contain a low number of reads supporting
+                        # the variant.
+                        freq_prod *= gt.var_freq
 
                         # Check that at least one heterozygous site has
                         # allele frequency within the boundaries
@@ -219,15 +236,14 @@ def main():
 
                         # Check that at least one heterozygous site has
                         # sufficient coverage to consider
-                        elif int(gt.cov) >= args.minimum_coverage \
+                        if int(gt.cov) >= args.minimum_coverage \
                         and int(gt.cov) <= args.maximum_coverage:
-                            heteroz_checker = True
+                            heteroz_cov_checker = True
 
                         # If user gives a file with median coverage values (-c),
                         # we check that the coverage for all heterozygous
                         # samples is within the defined boundaries (-a)
                         if args.coverage_file:
-                            median_covs = readCov()
                             median = median_covs[gt.sample]
                             # Check if coverage is outside the boundaries
                             # if so we skip this site by turning the
@@ -242,15 +258,12 @@ def main():
                     elif gt.var_freq == 0 or gt.var_freq == 1:
                         if int(gt.cov) >= args.minimum_coverage \
                         and int(gt.cov) <= args.maximum_coverage:
-                            #print(int(n_o_reads[counter]))
-                            homoz_checker = True
+                            homoz_cov_checker = True
 
                 # If checkers are true, continue to check minor_allele
                 # read frequency
-                if heteroz_checker == True \
-                and freq_checker == True \
-                and indv_cov_checker == True \
-                and homoz_checker == True:
+                if heteroz_cov_checker and freq_checker \
+                and indv_cov_checker and homoz_cov_checker:
 
                     # False positives often have several samples with a
                     # low frequency of the variant in the reads.
@@ -262,11 +275,14 @@ def main():
                     # variant is found. Samples with a single read
                     # containing the variant are ignored as this could be
                     # the result of sequencing error or index hopping
-                    tot_minor_allele = tot_alt if tot_alt < tot_ref else tot_ref
+                    tot_minor_allele = tot_alt if tot_alt < tot_ref else tot_ref   
 
-                    if tot_minor_allele > 1:
+                    # Here we also check for the frequency product.
+                    if tot_minor_allele > 1 and freq_prod > args.frequency_product:
+                        # import ipdb; ipdb.set_trace()
+                        # If we expect a 50/50 ratio we can do a binomial test
                         if args.test_binomial:
-                            if test_signif(tot_minor_allele, totcov) == True:
+                            if test_signif(tot_minor_allele, totcov):
                                 outlines.append(line)
                         else:
                             outlines.append(line)
