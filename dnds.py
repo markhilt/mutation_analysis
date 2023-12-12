@@ -41,7 +41,10 @@ parser.add_argument("variants", \
                     help="Variant call file in tab delimited format. \
                     Can be a vcf file, but all variants are assumed \
                     to be present in the query sample, and vcf genotype \
-                    fields are NOT taken into account. Required", \
+                    fields are NOT taken into account. Has to have the \
+                    following fields: \n\
+                    <scaffold> <coordinate> <anything> <ref_allele> <alt_allele> \
+                    Required", \
                     type = str)
 parser.add_argument("-i", "--include_all", \
                     help="Add to include fragmented gene annotations, \

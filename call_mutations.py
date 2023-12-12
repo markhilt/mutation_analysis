@@ -72,9 +72,9 @@ parser.add_argument("-p","--frequency_product", \
                     help="Minimum variant read frequency product. Calculated as \
                     the product of the variant read frequencies for all samples with \
                     at least one read supporting the variant. If a site has many samples \
-                    with very few reads supporting the variant, this value will be very small [1E-10].", \
+                    with very few reads supporting the variant, this value will be very small [1E-50].", \
                     type = float, \
-                    default = 1E-10)
+                    default = 1E-50)
 parser.add_argument("-s","--skip_indels", \
                     help="Add to skip indels (useful for pileup data).", \
                     action='store_true')
