@@ -35,7 +35,7 @@ parser.add_argument("reference", \
                     help="Reference genome fasta file. Required.", \
                     type = str)
 parser.add_argument("annotation", \
-                    help="Genome annotation gff file. Required.", \
+                    help="Genome annotation gff file. Has to be coordinate sorted! Required.", \
                     type = str)
 parser.add_argument("variants", \
                     help="Variant call file in tab delimited format. \
@@ -147,6 +147,7 @@ def collectVariants():
     '''
     with open(args.variants, "r") as vcf:
         variants = {}
+        n_indels, n_snps = 0,0
         for line in vcf:
             line = line.strip()
             if not line.startswith("#"):
@@ -155,8 +156,11 @@ def collectVariants():
                 ref_allele, alt_allele = fields[3], fields[4]
                 if len(ref_allele) == 1 and len(alt_allele) == 1: # Ignore indels
                     variants[(tig, coord)] = (ref_allele, alt_allele)
+                    n_snps += 1
+                else:
+                    n_indels += 1
 
-        return variants
+        return variants, n_indels, n_snps
 
 def readFasta():
     '''
@@ -225,7 +229,7 @@ def collectTranscripts(genes, fasta, ref_bool, all_bool):
         tig,coord1,coord2,strand,ID = k[0],k[1],k[2],k[3],k[4]# Unpack k
 
         for ex in exons:
-            seq = fasta[ k[0] ][ int(ex[0])-1:int(ex[1]) ] # Spliced coordinates assume gff format.
+            seq = fasta[ k[0] ][ int(ex[0])-1:int(ex[1]) ] # Spliced coordinates assume sorted gff format.
             exon_sequence_list.append(seq.upper())
 
         # After collecting all the exons, splice the resulting CDS
@@ -253,32 +257,34 @@ def collectTranscripts(genes, fasta, ref_bool, all_bool):
             # 3. Has a valid stop codon
 
             if not len(spliced_seq)%3 == 0:
-                # If spliced CDS is an uneven number of bases, skip it,
+                # If spliced gene is an uneven number of bases, skip it,
                 # unless the user gave the --include_all parameter.
                 # If so, we check if we can keep it.
                 if not all_bool:
+                    print("WARNING Gene {}: uneven number of bases - skipping (add --include_all to try to keep it).".format(str(ID)))
                     continue
                 elif startcodon == "ATG":
-                    # If correct start codon, we simply give a warning and remove the last codon,
+                    # If correct start codon, we simply give a warning and remove the last incomplete codon,
                     # forcing the gene to be divisible, and then keep it.
                     remaining = len(spliced_seq)%3
                     spliced_seq = spliced_seq[:-remaining] # Remove the last remaining bases
+                    spliced_genes[k] = spliced_seq
                     print("WARNING Gene {}: uneven number of bases - reading frame determined by start codon.".format(str(ID)))
                 else:
                     print("WARNING Gene {}: uneven number of bases - unable to determine reading frame, skipping gene".format(str(ID)))
                     continue
-
-            # Then we check for annotations with faulty start or stop codons.
-            stopcodon = spliced_seq[-3:] # Now that we know that gene spliced sequence is divisible by three, 
-                                         # we can collect the stop codon.
-            if startcodon == "ATG" and stopcodon in ("TAG","TAA","TGA"):
-                spliced_genes[k] = spliced_seq
-            elif all_bool: # If user wants to keep as many genes as possible, warn about problematic genes.
-                if startcodon != "ATG":
-                    print("WARNING Gene {}: non-canonical start codon ({})".format(str(ID), startcodon))
-                if stopcodon not in ("TAG","TAA","TGA"):
-                    print("WARNING Gene {}: non-canonical stop codon ({})".format(str(ID), stopcodon))
-                spliced_genes[k] = spliced_seq
+            else:
+                # Then we check for annotations with faulty start or stop codons.
+                stopcodon = spliced_seq[-3:] # Now that we know that gene spliced sequence is divisible by three, 
+                                             # we can collect the stop codon.
+                if startcodon == "ATG" and stopcodon in ("TAG","TAA","TGA"):
+                    spliced_genes[k] = spliced_seq
+                elif all_bool: # If user wants to keep as many genes as possible, warn about problematic genes.
+                    if startcodon != "ATG":
+                        print("WARNING Gene {}: non-canonical start codon ({}). Is the GFF sorted?".format(str(ID), startcodon))
+                    if stopcodon not in ("TAG","TAA","TGA"):
+                        print("WARNING Gene {}: non-canonical stop codon ({}). Is the GFF sorted?".format(str(ID), stopcodon))
+                    spliced_genes[k] = spliced_seq
 
     return spliced_genes
 
@@ -318,8 +324,8 @@ def findVariantGenes(variants, genes):
         coord = int(key[1])
 
         for k,v in genes.items():
-
             # Check if tig is the same and coord is within the gene boundaries
+            # Both VCF and GFF are 1-based
             if k[0] == tig:
                 if int(k[1]) <= coord and int(k[2]) >= coord:
 
@@ -400,30 +406,31 @@ def collectCDS():
         return genes
 
 def calcObserved(cds,variant_cds):
+    ''' Calculates the number of synonymous and nonsynonymous changes
+        in two gene sequences.
     '''
-    Calculates the number of synonymous and nonsynonymous changes
-    in two gene sequences.
-    '''
-    syn = 0
-    nonsym = 0
+    syn,nonsyn = 0,0
     per_gene = {}
 
-    for k,v in cds.items():
-        ref_seq = v
-        alt_seq = variant_cds[k]
+    for key,ref_seq in cds.items():
+        alt_seq = variant_cds[key]
         ref_codons = codonsplit(ref_seq)
-        variant_codons = codonsplit(alt_seq)
-        per_gene[k] = np.zeros(9)
+        alt_codons = codonsplit(alt_seq)
+        per_gene[key] = np.zeros(9)
 
         for idx, codon in enumerate(ref_codons):
-            if codon != variant_codons[idx]:
-                if genetic_code[codon] != genetic_code[ variant_codons[idx] ]:
-                    nonsym += 1
-                    per_gene[k][3] += 1
+            #import ipdb;ipdb.set_trace()
+            if codon != alt_codons[idx]: # If codon is the same, continue
+                # If codons are not the same, and the amino acid is also not the same,
+                # we have a nonsyn change
+                if genetic_code[codon] != genetic_code[ alt_codons[idx] ]:
+                    nonsyn += 1
+                    per_gene[key][3] += 1
+                # Else we have a syn change
                 else:
                     syn += 1
-                    per_gene[k][2] += 1
-    return syn, nonsym, per_gene
+                    per_gene[key][2] += 1
+    return syn, nonsyn, per_gene
 
 def calcNonCDSGenomeSize(genome, n_coding_bases):
     '''
@@ -453,23 +460,27 @@ def drawDnDs(variant_genes):
 
 
 def main():
-    variants = collectVariants()
+    variants, n_indels, n_snps = collectVariants()
     genome = readFasta()
     genes = collectCDS()
     readGeneticCode()
     filtered_genes, coding_variants = findVariantGenes(variants,genes) # Collect the genes with SNPs
-    n_coding = len(coding_variants) # Number of variants from the vcf file that were in CDS
-    n_noncoding = len(variants) - n_coding # Number of variants not in CDS
-
+    n_coding = len(coding_variants) # Number of SNPs from the vcf file that were located in CDS
+    n_noncoding = len(variants) - n_coding # Number of SNPs not in CDS
     # Collect the spliced coding sequences for all genes with one or more SNPs
-    # Here, genes with non-canonical start/stop codon annotations are removed.
+    # Here, genes with non-canonical start/stop codon annotations are removed
     cds = collectTranscripts(filtered_genes, genome, True, args.include_all)
-    filtered_genes = { key: filtered_genes[key] for key in cds.keys() }
+    # Keep only those genes in the filtered_genes
+    hq_genes = { key: filtered_genes[key] for key in cds.keys() }
+    # Count the number of remaining variants. I use the same function, which is probably inefficient.
+    x, filtered_variants = findVariantGenes(variants,hq_genes)
+    n_filtered_variants = len(filtered_variants)
+
     # Create the sequence for the variant genome
     variant_genome = swapbases(variants, genome) 
-
-    variant_cds = collectTranscripts(filtered_genes,variant_genome, False, False)
+    variant_cds = collectTranscripts(hq_genes,variant_genome, False, False)
     n_variant_genes = len(filtered_genes)
+    n_variant_hq_genes = len(hq_genes)
 
     if args.write_seq:
         ref_fname = args.reference.split("/")[-1].rstrip("fasta") + "CDS"
@@ -514,13 +525,20 @@ def main():
 
     print("\nStatistics per gene written to file: {}".format(outfilename))
     print("\n#### Full dataset statistics ####")
-    print( "Number of genes with variants: {}".format(str(n_variant_genes)))
-    print( "Number of variants in coding regions: {}".format(str(n_coding)))
-    print( "Number of variants in non-coding regions: {}".format(str(n_noncoding)))
-    print( "Synonymous sites: " + str(tot_synonymous))
-    print( "Nonsynonymous sites: " + str(tot_nonsynonymous))
-    print("Synonymous substitutions: " + str(obs_syn))
-    print("Nonsynonymous substitutions: " + str(obs_nonsyn))
+    print("Number of variants: {}".format(n_indels+n_snps))
+    print(" of which are indels: {}".format(n_indels))
+    print(" of which are SNPs: {}".format(n_snps))
+    print("  of which are in CDS: {}".format(n_coding))
+    print("   of which are in genes passing QC: {}".format(n_filtered_variants))
+    print("  of which are outside CDS: {}".format(str(n_noncoding)))
+    print("Number of genes with at least one SNP: {}".format(n_variant_genes))
+    print(" of which passed QC: {}".format(n_variant_hq_genes))
+    print("\n#### dN/dS statistics ####")
+    print("Calculated based on genes that passed QC (n={}) and SNPs within the CDS of these genes (n={})\n".format(n_variant_hq_genes,n_filtered_variants))
+    print("Synonymous sites: {}".format(tot_synonymous))
+    print("Nonsynonymous sites: {}".format(tot_nonsynonymous))
+    print("Synonymous substitutions: {}".format(obs_syn))
+    print("Nonsynonymous substitutions: {}".format(obs_nonsyn))
     print("dN: " + str(dN))
     print("dS: " + str(dS))
     print("dN/dS: " + str(dnds))
