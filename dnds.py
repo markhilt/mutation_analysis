@@ -23,7 +23,7 @@ Copyright (c) 2023, Johannesson lab
 Licensed under the MIT license. See LICENSE file.
 """
 
-__version__ = "1.0"
+__version__ = "1.1"
 
 import argparse
 import numpy as np
