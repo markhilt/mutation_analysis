@@ -22,7 +22,7 @@ from operator import truediv # To be able to divide lists
 from scipy import stats as ss
 import argparse
 
-__version__ = "0.5"
+__version__ = "0.6"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -75,6 +75,11 @@ parser.add_argument("-p","--frequency_product", \
                     with very few reads supporting the variant, this value will be very small [1E-50].", \
                     type = float, \
                     default = 1E-50)
+parser.add_argument("-l","--hom_alt", \
+                    help="Add to report sites where the majority of samples are homozygous \
+                    for the alternate allele. Such sites are assumed to be triallelic and \
+                    can in most cases be ignored.", \
+                    action='store_true')
 parser.add_argument("-s","--skip_indels", \
                     help="Add to skip indels (useful for pileup data).", \
                     action='store_true')
@@ -192,8 +197,14 @@ def main():
             if all(x == variant_frequencies[0] for x in variant_frequencies):
                 continue
 
-            # Look for homozygous sites. Require also more than args.minimum_reads
-            # of the minor allele in at least one sample
+            # Generally, we are interested in sites where most 
+            # samples are homozygous for the reference allele: freq = 0.0
+            # Unless the user gave --hom_alt, report only such sites.
+            if args.hom_alt == False and 1.0 in variant_frequencies:
+                continue
+
+            # Look for homozygous sites.  Require also more than args.minimum_reads
+            # of the minor allele in at least one sample.
             if (1.0 in variant_frequencies or 0.0 in variant_frequencies) and \
             max([x.ref_reads for x in genotypes]) >= args.minimum_reads and \
             max([x.var_reads for x in genotypes]) >= args.minimum_reads:
