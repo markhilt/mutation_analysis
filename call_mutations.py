@@ -68,6 +68,10 @@ parser.add_argument("-f","--frequency_cutoff", \
                     help="Minimum variant read frequency to keep a variant [0.2].", \
                     type = float, \
                     default = 0.2)
+parser.add_argument("-q","--qual", \
+                    help="Minimum variant quality [1].", \
+                    type = float, \
+                    default = 1)
 parser.add_argument("-p","--frequency_product", \
                     help="Minimum variant read frequency product. Calculated as \
                     the product of the variant read frequencies for all samples with \
@@ -178,6 +182,10 @@ def main():
             qual = float(fields[5])
             pos = int(fields[1])
             tig = fields[0]
+
+            # Skip lines where args.qual is too low.
+            if qual < args.qual:
+                continue
 
             # Collect data into a list of Genotypes
             reads_per_sample = fields[min(genotype_positions):max(genotype_positions) + 1] # It's still a list of strings
