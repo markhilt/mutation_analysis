@@ -20,9 +20,10 @@ Licensed under the MIT license. See LICENSE file.
 
 from operator import truediv # To be able to divide lists
 from scipy import stats as ss
+import os
 import argparse
 
-__version__ = "0.6"
+__version__ = "0.7"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -90,6 +91,9 @@ parser.add_argument("-s","--skip_indels", \
 parser.add_argument("-b","--background", \
                     help="Add to quit after filtering out background variants.", \
                     action='store_true')
+parser.add_argument("-d","--haploid", \
+                    help="Add to run the script in haploid mode. Equivalent to -f 0.8 -l.", \
+                    action='store_true')
 parser.add_argument("-t","--test_binomial", \
                     help="Add to test the reads for a binomial distribution. \
                     Only reads from the sample(s) containing the variant are considered.", \
@@ -117,7 +121,9 @@ def getOut():
     if args.output:
         outprefix = args.output
     else:
-        outprefix = "potential_mutations"
+        outprefix = os.path.basename(args.input)
+        outprefix = outprefix.removesuffix(".tbl").removesuffix(".table").removesuffix(".tsv").removesuffix(".txt")
+        outprefix = outprefix+".potential_mutations"
     return outprefix
 
 def readCov():
@@ -150,8 +156,16 @@ def test_signif(var,cov):
         return True
 
 def main():
-    outfile = getOut() + ".table"
+    outfile = getOut() + ".tbl"
     outlines = []
+
+    hom_alt = args.hom_alt
+    frequency_cutoff = args.frequency_cutoff
+
+    # If running in haploid mode, we set -f 0.8 and -l to be true.
+    if args.haploid:
+        hom_alt = True
+        frequency_cutoff = 0.8
 
     # If user gives a file with median coverage values (-c),
     # read this file.
@@ -171,12 +185,16 @@ def main():
                 outlines.append("\t".join(fields[0:6])+"\t"+"\t".join(samples))
                 continue
 
-            # If skipping indels
-            if args.skip_indels == True and len(fields[3]) != len(fields[4]):
-                continue
-
             # Skip lines with missing data.
             if "." in "".join(fields[6:]) or "NA" in "".join(fields[6:]):
+                continue
+
+            # Skip lines with more than two alleles.
+            if "," in fields[4]:
+                continue
+
+            # If skipping indels
+            if args.skip_indels == True and len(fields[3]) != len(fields[4]):
                 continue
 
             qual = float(fields[5])
@@ -208,10 +226,10 @@ def main():
             # Generally, we are interested in sites where most 
             # samples are homozygous for the reference allele: freq = 0.0
             # Unless the user gave --hom_alt, report only such sites.
-            if args.hom_alt == False and 1.0 in variant_frequencies:
+            if hom_alt == False and 1.0 in variant_frequencies:
                 continue
 
-            # Look for homozygous sites.  Require also more than args.minimum_reads
+            # Look for homozygous sites. Require also more than args.minimum_reads
             # of the minor allele in at least one sample.
             if (1.0 in variant_frequencies or 0.0 in variant_frequencies) and \
             max([x.ref_reads for x in genotypes]) >= args.minimum_reads and \
@@ -231,7 +249,8 @@ def main():
 
                 for gt in genotypes:
 
-                    # Look for heterozygous sites
+                    # By default we assume a diploid/dikaryotic sample,
+                    # so we consider heterozygous sites.
                     if gt.var_freq != 1.0 and gt.var_freq != 0.0:
 
                         # Add number of variant reads to total variant
@@ -249,8 +268,8 @@ def main():
 
                         # Check that at least one heterozygous site has
                         # allele frequency within the boundaries
-                        if gt.var_freq > args.frequency_cutoff \
-                        and gt.var_freq < 1 - args.frequency_cutoff:
+                        if gt.var_freq > frequency_cutoff \
+                        and gt.var_freq < 1 - frequency_cutoff:
                             freq_checker = True
 
                         # Check that at least one heterozygous site has
