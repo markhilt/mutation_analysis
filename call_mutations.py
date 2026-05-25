@@ -23,7 +23,7 @@ from scipy import stats as ss
 import os
 import argparse
 
-__version__ = "0.7"
+__version__ = "0.8"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -226,6 +226,7 @@ def main():
             # Generally, we are interested in sites where most 
             # samples are homozygous for the reference allele: freq = 0.0
             # Unless the user gave --hom_alt, report only such sites.
+            # This means skipping any site that has a hom-alt call.
             if hom_alt == False and 1.0 in variant_frequencies:
                 continue
 
@@ -273,9 +274,12 @@ def main():
                             freq_checker = True
 
                         # Check that at least one heterozygous site has
-                        # sufficient coverage to consider
+                        # sufficient coverage to consider. Require 
+                        # at least args.minimum_reads number of 
+                        # reads in this sample.
                         if int(gt.cov) >= args.minimum_coverage \
-                        and int(gt.cov) <= args.maximum_coverage:
+                        and int(gt.cov) <= args.maximum_coverage \
+                        and int(gt.cov) >= args.minimum_reads:
                             heteroz_cov_checker = True
 
                         # If user gives a file with median coverage values (-c),
