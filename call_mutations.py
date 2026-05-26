@@ -23,7 +23,7 @@ from scipy import stats as ss
 import os
 import argparse
 
-__version__ = "0.8"
+__version__ = "0.8.1"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -279,7 +279,7 @@ def main():
                         # reads in this sample.
                         if int(gt.cov) >= args.minimum_coverage \
                         and int(gt.cov) <= args.maximum_coverage \
-                        and int(gt.cov) >= args.minimum_reads:
+                        and int(gt.var_reads) >= args.minimum_reads:
                             heteroz_cov_checker = True
 
                         # If user gives a file with median coverage values (-c),
