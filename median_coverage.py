@@ -18,7 +18,7 @@ import argparse
 import numpy as np
 import gzip
 
-__version__ = "0.1"
+__version__ = "0.2"
 
 parser = argparse.ArgumentParser(description='	Calculates the median coverage both per sample \
 												and per base pair, from a file containing the \
@@ -45,6 +45,9 @@ args = parser.parse_args()
 def main():
 	with gzip.open(args.input, "rt") as infile:
 		with open(args.output+".txt", "w") as outfile:
+			# Write a header line
+			outfile.write("# CHROM\tpos\tMedian\tMean\tStandard deviation\n")
+
 			for line in infile:
 				line = line.strip()
 				fields = line.split("\t")
@@ -62,18 +65,19 @@ def main():
 					# 1. Calculate the median for the line = genomic position
 					dat = np.asarray(fields[2:], dtype = int)
 					median = np.median(dat)
+					mean = np.mean(dat)
 					sd = np.std(dat)
-					outfile.write("{}\t{}\t{}\t{}\n".format(fields[0], fields[1], str(median), str(sd)))
+					outfile.write("{}\t{}\t{}\t{}\t{}\n".format(fields[0], fields[1], str(median), str(mean), str(sd)))
 					# 2. Save each value to its respective dict entry. Use enumerate to get the index for the sample
 					for idx, val in enumerate(fields[2:]):
 						cov_per_sample[samples[idx]].append(int(val))
 
 	# After done looping through the file, convert lists in the dict to arrays and calculate median, sd
-	print("# Median coverage per sample")
+	print("# Sample\tMedian\tMean\tStandard deviation")
 	for k,v in cov_per_sample.items():
 		dat = np.asarray(v)
-		median, sd = np.median(dat), np.std(dat)
-		print("\t".join([k, str(median), str(sd)]))
+		median, mean, sd = np.median(dat), np.mean(dat), np.std(dat)
+		print("\t".join([k, str(median), str(mean), str(sd)]))
 
 if __name__ == "__main__":
     main()
