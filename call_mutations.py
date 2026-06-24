@@ -23,7 +23,7 @@ from scipy import stats as ss
 import os
 import argparse
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 parser = argparse.ArgumentParser(description='Filter variants to find potential \
                                             mutations. Input: variant table from \
@@ -79,7 +79,7 @@ parser.add_argument("-p","--frequency_product", \
                     at least one read supporting the variant. If a site has many samples \
                     with very few reads supporting the variant, this value will be very small [1E-50].", \
                     type = float, \
-                    default = 1E-50)
+                    default = 1E-10)
 parser.add_argument("-l","--hom_alt", \
                     help="Add to report sites where the majority of samples are homozygous \
                     for the alternate allele. Such sites are assumed to be triallelic and \
@@ -331,6 +331,7 @@ def main():
 
         with open(outfile, "w") as out:
             out.write("\n".join(outlines))
+            out.write("\n")
 
 if __name__ == "__main__":
     main()
